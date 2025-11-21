@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
 import os
+from urllib.parse import urlparse
 from supabase import create_client, Client
 import resend
 import cloudinary
@@ -40,7 +41,14 @@ resend.api_key = RESEND_API_KEY
 
 # Initialize Cloudinary - supports CLOUDINARY_URL format: cloudinary://api_key:api_secret@cloud_name
 if CLOUDINARY_URL:
-    cloudinary.config_from_url(CLOUDINARY_URL)
+    # Parse the Cloudinary URL: cloudinary://api_key:api_secret@cloud_name
+    parsed = urlparse(CLOUDINARY_URL)
+    # urlparse extracts: username=api_key, password=api_secret, hostname=cloud_name
+    cloudinary.config(
+        cloud_name=parsed.hostname,
+        api_key=parsed.username,
+        api_secret=parsed.password
+    )
 else:
     # Fallback to individual environment variables if URL is not provided
     CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
