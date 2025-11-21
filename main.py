@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -15,8 +15,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with your frontend domain
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Environment Variables
@@ -100,7 +101,20 @@ def verify_admin(password: str):
 def read_root():
     return {"message": "Dori by Gouri API is running"}
 
+# Explicit OPTIONS handler for CORS preflight
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
 # Product Routes
+@app.get("/products", response_model=List[Product])
 @app.get("/api/products", response_model=List[Product])
 def get_products(category: Optional[str] = None):
     try:
@@ -122,6 +136,7 @@ def get_product(product_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/products", response_model=Product)
 @app.post("/api/products", response_model=Product)
 def create_product(product: ProductCreate, auth: AdminAuth):
     verify_admin(auth.password)
