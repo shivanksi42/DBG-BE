@@ -30,9 +30,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 OWNER_EMAIL = "shivam@yopmail.com"
 
 # Cloudinary Configuration
-CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
-CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
-CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+CLOUDINARY_URL = os.getenv("CLOUDINARY_URL")
 
 # Initialize Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -40,12 +38,19 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Initialize Resend
 resend.api_key = RESEND_API_KEY
 
-# Initialize Cloudinary
-cloudinary.config(
-    cloud_name=CLOUDINARY_CLOUD_NAME,
-    api_key=CLOUDINARY_API_KEY,
-    api_secret=CLOUDINARY_API_SECRET
-)
+# Initialize Cloudinary - supports CLOUDINARY_URL format: cloudinary://api_key:api_secret@cloud_name
+if CLOUDINARY_URL:
+    cloudinary.config_from_url(CLOUDINARY_URL)
+else:
+    # Fallback to individual environment variables if URL is not provided
+    CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+    CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
+    CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET
+    )
 
 # Pydantic Models
 class Product(BaseModel):
