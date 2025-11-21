@@ -49,6 +49,7 @@ class ProductCreate(BaseModel):
     category: str
     description: Optional[str] = None
     image: Optional[str] = None
+    password: Optional[str] = None  # For admin authentication
 
 class OrderRequest(BaseModel):
     product_name: str
@@ -140,25 +141,35 @@ async def options_products():
 
 @app.post("/products", response_model=Product)
 @app.post("/api/products", response_model=Product)
-def create_product(product: ProductCreate, auth: AdminAuth):
-    verify_admin(auth.password)
+def create_product(product: ProductCreate):
+    if not product.password:
+        raise HTTPException(status_code=401, detail="Admin password required")
+    verify_admin(product.password)
+    # Remove password from product data before saving
+    product_data = product.dict(exclude={"password"})
     try:
-        response = supabase.table("products").insert(product.dict()).execute()
+        response = supabase.table("products").insert(product_data).execute()
         return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/products/{product_id}", response_model=Product)
 @app.put("/api/products/{product_id}", response_model=Product)
-def update_product(product_id: int, product: ProductCreate, auth: AdminAuth):
-    verify_admin(auth.password)
+def update_product(product_id: int, product: ProductCreate):
+    if not product.password:
+        raise HTTPException(status_code=401, detail="Admin password required")
+    verify_admin(product.password)
+    # Remove password from product data before saving
+    product_data = product.dict(exclude={"password"})
     try:
-        response = supabase.table("products").update(product.dict()).eq("id", product_id).execute()
+        response = supabase.table("products").update(product_data).eq("id", product_id).execute()
         if not response.data:
             raise HTTPException(status_code=404, detail="Product not found")
         return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/products/{product_id}")
 @app.delete("/api/products/{product_id}")
 def delete_product(product_id: int, auth: AdminAuth):
     verify_admin(auth.password)
@@ -169,6 +180,18 @@ def delete_product(product_id: int, auth: AdminAuth):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Order Routes
+@app.options("/api/orders")
+async def options_orders():
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
 @app.post("/api/orders")
 async def create_order(order: OrderRequest):
     try:
