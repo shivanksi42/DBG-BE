@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Response, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -6,6 +6,8 @@ from datetime import datetime
 import os
 from supabase import create_client, Client
 import resend
+import cloudinary
+import cloudinary.uploader
 
 # Initialize FastAPI
 app = FastAPI(title="Dori by Gouri API")
@@ -27,11 +29,23 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 OWNER_EMAIL = "shivam@yopmail.com"
 
+# Cloudinary Configuration
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+
 # Initialize Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Initialize Resend
 resend.api_key = RESEND_API_KEY
+
+# Initialize Cloudinary
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET
+)
 
 # Pydantic Models
 class Product(BaseModel):
@@ -141,12 +155,47 @@ async def options_products():
 
 @app.post("/products", response_model=Product)
 @app.post("/api/products", response_model=Product)
-def create_product(product: ProductCreate):
-    if not product.password:
+async def create_product(
+    name: str = Form(...),
+    price: float = Form(...),
+    category: str = Form(...),
+    description: Optional[str] = Form(None),
+    password: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None)  # For backward compatibility
+):
+    # Verify admin
+    if not password:
         raise HTTPException(status_code=401, detail="Admin password required")
-    verify_admin(product.password)
-    # Remove password from product data before saving
-    product_data = product.dict(exclude={"password"})
+    verify_admin(password)
+    
+    # Handle image upload
+    image_url_final = image_url  # Use provided URL if available
+    
+    if image and image.filename:
+        try:
+            # Read image file
+            image_bytes = await image.read()
+            
+            # Upload to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                image_bytes,
+                folder="dori-products",  # Organize images in a folder
+                resource_type="image"
+            )
+            image_url_final = upload_result.get("secure_url")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+    
+    # Prepare product data
+    product_data = {
+        "name": name,
+        "price": price,
+        "category": category,
+        "description": description,
+        "image": image_url_final
+    }
+    
     try:
         response = supabase.table("products").insert(product_data).execute()
         return response.data[0]
@@ -155,12 +204,51 @@ def create_product(product: ProductCreate):
 
 @app.put("/products/{product_id}", response_model=Product)
 @app.put("/api/products/{product_id}", response_model=Product)
-def update_product(product_id: int, product: ProductCreate):
-    if not product.password:
+async def update_product(
+    product_id: int,
+    name: str = Form(...),
+    price: float = Form(...),
+    category: str = Form(...),
+    description: Optional[str] = Form(None),
+    password: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None)  # For backward compatibility
+):
+    # Verify admin
+    if not password:
         raise HTTPException(status_code=401, detail="Admin password required")
-    verify_admin(product.password)
-    # Remove password from product data before saving
-    product_data = product.dict(exclude={"password"})
+    verify_admin(password)
+    
+    # Handle image upload
+    image_url_final = image_url  # Use provided URL if available
+    
+    if image and image.filename:
+        try:
+            # Read image file
+            image_bytes = await image.read()
+            
+            # Upload to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                image_bytes,
+                folder="dori-products",  # Organize images in a folder
+                resource_type="image"
+            )
+            image_url_final = upload_result.get("secure_url")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+    
+    # Prepare product data
+    product_data = {
+        "name": name,
+        "price": price,
+        "category": category,
+        "description": description
+    }
+    
+    # Only update image if a new one was provided
+    if image_url_final is not None:
+        product_data["image"] = image_url_final
+    
     try:
         response = supabase.table("products").update(product_data).eq("id", product_id).execute()
         if not response.data:
