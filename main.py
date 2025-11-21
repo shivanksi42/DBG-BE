@@ -14,7 +14,7 @@ app = FastAPI(title="Dori by Gouri API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with your frontend domain
-    allow_credentials=True,
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],
@@ -101,18 +101,6 @@ def verify_admin(password: str):
 def read_root():
     return {"message": "Dori by Gouri API is running"}
 
-# Explicit OPTIONS handler for CORS preflight
-@app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "*",
-        }
-    )
-
 # Product Routes
 @app.get("/products", response_model=List[Product])
 @app.get("/api/products", response_model=List[Product])
@@ -135,6 +123,20 @@ def get_product(product_id: int):
         return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Explicit OPTIONS handlers for CORS preflight (must be before POST routes)
+@app.options("/products")
+@app.options("/api/products")
+async def options_products():
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
 
 @app.post("/products", response_model=Product)
 @app.post("/api/products", response_model=Product)
@@ -240,3 +242,16 @@ def get_categories():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# Catch-all OPTIONS handler for any other routes
+@app.options("/{full_path:path}")
+async def options_catch_all(full_path: str):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
