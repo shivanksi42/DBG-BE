@@ -1,6 +1,7 @@
 """Product management routes."""
 from fastapi import APIRouter, HTTPException, status, Depends, File, UploadFile, Form
 from typing import List, Optional
+import json
 from app.models.product import Product, ProductCreate, ProductUpdate
 from app.database.supabase_client import supabase
 from app.dependencies import get_current_admin
@@ -9,12 +10,25 @@ from app.utils.cloudinary import upload_image
 router = APIRouter(prefix="/api/products", tags=["Products"])
 
 @router.get("", response_model=List[Product])
-async def get_products(category_id: Optional[int] = None):
-    """Get all products, optionally filtered by category."""
+async def get_products(
+    category_id: Optional[int] = None,
+    scent: Optional[str] = None,
+    admin: Optional[bool] = False
+):
+    """Get all products, optionally filtered by category, scent, and admin mode."""
     try:
         query = supabase.table("products").select("*, categories(*)")
+        
         if category_id:
             query = query.eq("category_id", category_id)
+        
+        if scent:
+            query = query.eq("scent", scent)
+        
+        # If not admin mode, only show active products
+        if not admin:
+            query = query.eq("is_active", True)
+        
         response = query.order("created_at").execute()
         # Reverse the list to get newest first (Supabase orders ascending by default)
         if response.data:
@@ -54,6 +68,11 @@ async def create_product(
     scent: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
+    quantity: Optional[int] = Form(0),
+    is_active: Optional[str] = Form("true"),
+    banner: Optional[str] = Form(None),
+    discount_percentage: Optional[float] = Form(0),
+    gallery_images: Optional[str] = Form(None),
     current_admin: dict = Depends(get_current_admin)
 ):
     """Create a new product (admin only)."""
@@ -66,7 +85,7 @@ async def create_product(
                 detail="Category not found"
             )
         
-        # Handle image upload
+        # Handle main image upload
         image_url_final = image_url
         
         if image and image.filename:
@@ -79,6 +98,17 @@ async def create_product(
                     detail=f"Image upload failed: {str(e)}"
                 )
         
+        # Handle gallery images (from JSON string)
+        gallery_images_list = []
+        if gallery_images:
+            try:
+                gallery_images_list = json.loads(gallery_images)
+            except:
+                gallery_images_list = []
+        
+        # Parse is_active
+        is_active_bool = is_active.lower() == "true" if is_active else True
+        
         # Prepare product data
         product_data = {
             "name": name,
@@ -86,7 +116,12 @@ async def create_product(
             "category_id": category_id,
             "description": description,
             "scent": scent,
-            "image": image_url_final
+            "image": image_url_final,
+            "quantity": quantity or 0,
+            "is_active": is_active_bool,
+            "banner": banner,
+            "discount_percentage": discount_percentage or 0,
+            "gallery_images": gallery_images_list if gallery_images_list else None
         }
         
         response = supabase.table("products").insert(product_data).execute()
@@ -109,6 +144,11 @@ async def update_product(
     scent: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
+    quantity: Optional[int] = Form(None),
+    is_active: Optional[str] = Form(None),
+    banner: Optional[str] = Form(None),
+    discount_percentage: Optional[float] = Form(None),
+    gallery_images: Optional[str] = Form(None),
     current_admin: dict = Depends(get_current_admin)
 ):
     """Update a product (admin only)."""
@@ -122,7 +162,7 @@ async def update_product(
                     detail="Category not found"
                 )
         
-        # Handle image upload
+        # Handle main image upload
         image_url_final = image_url
         
         if image and image.filename:
@@ -134,6 +174,17 @@ async def update_product(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Image upload failed: {str(e)}"
                 )
+        
+        # Handle gallery images (from JSON string)
+        gallery_images_list = None
+        if gallery_images is not None:
+            if gallery_images == "":
+                gallery_images_list = []
+            else:
+                try:
+                    gallery_images_list = json.loads(gallery_images)
+                except:
+                    gallery_images_list = []
         
         # Prepare product data
         product_data = {}
@@ -149,6 +200,16 @@ async def update_product(
             product_data["scent"] = scent
         if image_url_final is not None:
             product_data["image"] = image_url_final
+        if quantity is not None:
+            product_data["quantity"] = quantity
+        if is_active is not None:
+            product_data["is_active"] = is_active.lower() == "true"
+        if banner is not None:
+            product_data["banner"] = banner if banner else None
+        if discount_percentage is not None:
+            product_data["discount_percentage"] = discount_percentage
+        if gallery_images_list is not None:
+            product_data["gallery_images"] = gallery_images_list
         
         if not product_data:
             raise HTTPException(

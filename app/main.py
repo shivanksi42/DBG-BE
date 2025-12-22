@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from app.config import settings
-from app.routes import auth, products, orders, categories
+from app.routes import auth, products, orders, categories, discounts, catalog
 
 # Initialize FastAPI
 app = FastAPI(
@@ -27,6 +27,8 @@ app.include_router(auth.router)
 app.include_router(products.router)
 app.include_router(orders.router)
 app.include_router(categories.router)
+app.include_router(discounts.router)
+app.include_router(catalog.router)
 
 # Root endpoint
 @app.get("/")

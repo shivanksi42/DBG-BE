@@ -1,6 +1,6 @@
 """Category management routes."""
 from fastapi import APIRouter, HTTPException, status, Depends
-from typing import List
+from typing import List, Optional
 from app.models.category import Category, CategoryCreate, CategoryUpdate
 from app.database.supabase_client import supabase
 from app.dependencies import get_current_admin
@@ -8,10 +8,22 @@ from app.dependencies import get_current_admin
 router = APIRouter(prefix="/api/categories", tags=["Categories"])
 
 @router.get("", response_model=List[Category])
-async def get_categories():
-    """Get all categories."""
+async def get_categories(with_active_products: Optional[bool] = False):
+    """Get all categories, optionally filtered to only those with active products."""
     try:
-        response = supabase.table("categories").select("*").order("name").execute()
+        query = supabase.table("categories").select("*").order("name")
+        
+        if with_active_products:
+            # Get categories that have at least one active product
+            products_response = supabase.table("products").select("category_id").eq("is_active", True).execute()
+            active_category_ids = list(set([p["category_id"] for p in products_response.data if p.get("category_id")]))
+            if active_category_ids:
+                query = query.in_("id", active_category_ids)
+            else:
+                # No active products, return empty list
+                return []
+        
+        response = query.execute()
         return response.data
     except Exception as e:
         raise HTTPException(
