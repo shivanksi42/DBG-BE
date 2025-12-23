@@ -11,6 +11,7 @@ class Settings:
     
     # Resend Configuration
     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL: str = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")  # Default Resend domain
     OWNER_EMAIL: str = os.getenv("OWNER_EMAIL", "shivam@yopmail.com")
     
     # Cloudinary Configuration

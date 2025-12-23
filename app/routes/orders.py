@@ -31,32 +31,39 @@ async def create_order(order: OrderRequest):
         }
         db_response = supabase.table("orders").insert(order_data).execute()
         
-        # Send email to owner using Resend
-        email_content = f"""
-        <h2>New Order Request</h2>
-        <h3>Product Details</h3>
-        <p><strong>Product:</strong> {order.product_name}</p>
-        <p><strong>Price:</strong> ₹{order.product_price}</p>
-        <p><strong>Quantity:</strong> {order.quantity}</p>
-        <p><strong>Total:</strong> ₹{total}</p>
-        
-        <h3>Customer Details</h3>
-        <p><strong>Name:</strong> {order.customer_name}</p>
-        <p><strong>Email:</strong> {order.customer_email}</p>
-        <p><strong>Phone:</strong> {order.customer_phone}</p>
-        <p><strong>Address:</strong> {order.delivery_address}</p>
-        
-        {f'<p><strong>Message:</strong> {order.message}</p>' if order.message else ''}
-        
-        <p><em>Please contact the customer to confirm the order.</em></p>
-        """
-        
-        resend.Emails.send({
-            "from": "orders@yourdomain.com",  # Replace with your verified domain
-            "to": settings.OWNER_EMAIL,
-            "subject": f"New Order: {order.product_name} - {order.customer_name}",
-            "html": email_content
-        })
+        # Send email to owner using Resend (optional - order is saved even if email fails)
+        if settings.RESEND_API_KEY:
+            try:
+                email_content = f"""
+                <h2>New Order Request</h2>
+                <h3>Product Details</h3>
+                <p><strong>Product:</strong> {order.product_name}</p>
+                <p><strong>Price:</strong> ₹{order.product_price}</p>
+                <p><strong>Quantity:</strong> {order.quantity}</p>
+                <p><strong>Total:</strong> ₹{total}</p>
+                
+                <h3>Customer Details</h3>
+                <p><strong>Name:</strong> {order.customer_name}</p>
+                <p><strong>Email:</strong> {order.customer_email}</p>
+                <p><strong>Phone:</strong> {order.customer_phone}</p>
+                <p><strong>Address:</strong> {order.delivery_address}</p>
+                
+                {f'<p><strong>Message:</strong> {order.message}</p>' if order.message else ''}
+                
+                <p><em>Please contact the customer to confirm the order.</em></p>
+                """
+                
+                resend.Emails.send({
+                    "from": settings.RESEND_FROM_EMAIL,
+                    "to": settings.OWNER_EMAIL,
+                    "subject": f"New Order: {order.product_name} - {order.customer_name}",
+                    "html": email_content
+                })
+            except Exception as email_error:
+                # Log email error but don't fail the order creation
+                # In production, you might want to log this to a monitoring service
+                print(f"Failed to send order notification email: {str(email_error)}")
+                # Order is still created successfully
         
         return {
             "message": "Order request sent successfully",
