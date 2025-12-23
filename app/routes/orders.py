@@ -128,19 +128,128 @@ async def get_order_stats(
         
         # Status breakdown
         status_counts = {}
+        pending_orders = 0
+        accepted_orders = 0
+        rejected_orders = 0
+        
         for order in orders:
-            status = order.get("status", "unknown")
-            status_counts[status] = status_counts.get(status, 0) + 1
+            order_status = order.get("status", "unknown")
+            status_counts[order_status] = status_counts.get(order_status, 0) + 1
+            
+            # Count specific statuses (handle both backend and frontend status names)
+            if order_status in ["pending"]:
+                pending_orders += 1
+            elif order_status in ["confirmed", "accepted"]:
+                accepted_orders += 1
+            elif order_status in ["cancelled", "rejected"]:
+                rejected_orders += 1
         
         # Average order value
         avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
+        
+        # Generate chart data (orders by date)
+        chart_data = {}
+        for order in orders:
+            order_date = order.get("created_at", "")
+            if order_date:
+                # Extract date part (YYYY-MM-DD)
+                date_key = order_date.split("T")[0] if "T" in order_date else order_date.split(" ")[0]
+                if date_key not in chart_data:
+                    chart_data[date_key] = {"date": date_key, "orders": 0}
+                chart_data[date_key]["orders"] += 1
+        
+        # Convert chart_data dict to sorted list
+        chart_data_list = sorted(chart_data.values(), key=lambda x: x["date"])
         
         return {
             "total_orders": total_orders,
             "total_revenue": round(total_revenue, 2),
             "average_order_value": round(avg_order_value, 2),
-            "status_breakdown": status_counts
+            "status_breakdown": status_counts,
+            "pending_orders": pending_orders,
+            "accepted_orders": accepted_orders,
+            "rejected_orders": rejected_orders,
+            "chart_data": chart_data_list
         }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@router.get("/status")
+async def get_orders_by_status(
+    status: str,
+    current_admin: dict = Depends(get_current_admin)
+):
+    """Get orders filtered by status (admin only)."""
+    try:
+        # Map frontend status abbreviations to backend statuses
+        status_mapping = {
+            "acc": "confirmed",
+            "rej": "cancelled",
+            "accepted": "confirmed",
+            "rejected": "cancelled"
+        }
+        
+        # Translate status if needed
+        filter_status = status_mapping.get(status.lower(), status.lower())
+        
+        query = supabase.table("orders").select("*").eq("status", filter_status).order("created_at", desc=True)
+        response = query.execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@router.patch("/status")
+async def bulk_update_order_status(
+    status: str,
+    current_admin: dict = Depends(get_current_admin)
+):
+    """Bulk update order status by status value (admin only).
+    
+    Updates all pending orders to the new status.
+    Status can be provided as query parameter: ?status=acc or ?status=rej
+    """
+    try:
+        # Map frontend status abbreviations to backend statuses
+        status_mapping = {
+            "acc": "confirmed",
+            "rej": "cancelled",
+            "accepted": "confirmed",
+            "rejected": "cancelled"
+        }
+        
+        # Translate status if needed
+        new_status = status_mapping.get(status.lower(), status.lower())
+        
+        valid_statuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "accepted", "rejected"]
+        if new_status not in valid_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            )
+        
+        # Update all pending orders to the new status
+        response = supabase.table("orders").update({"status": new_status}).eq("status", "pending").execute()
+        
+        if not response.data:
+            return {
+                "message": "No pending orders found to update",
+                "updated_count": 0,
+                "orders": []
+            }
+        
+        return {
+            "message": f"Successfully updated {len(response.data)} orders",
+            "updated_count": len(response.data),
+            "orders": response.data
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -155,14 +264,25 @@ async def update_order_status(
 ):
     """Update order status (admin only)."""
     try:
-        valid_statuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"]
-        if status not in valid_statuses:
+        # Map frontend status abbreviations to backend statuses
+        status_mapping = {
+            "acc": "confirmed",
+            "rej": "cancelled",
+            "accepted": "confirmed",
+            "rejected": "cancelled"
+        }
+        
+        # Translate status if needed
+        new_status = status_mapping.get(status.lower(), status.lower())
+        
+        valid_statuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "accepted", "rejected"]
+        if new_status not in valid_statuses:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
             )
         
-        response = supabase.table("orders").update({"status": status}).eq("id", order_id).execute()
+        response = supabase.table("orders").update({"status": new_status}).eq("id", order_id).execute()
         
         if not response.data:
             raise HTTPException(
