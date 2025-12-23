@@ -77,13 +77,15 @@ async def create_product(
 ):
     """Create a new product (admin only)."""
     try:
-        # Verify category exists
-        category_response = supabase.table("categories").select("id").eq("id", category_id).execute()
+        # Verify category exists and get category name
+        category_response = supabase.table("categories").select("id, name").eq("id", category_id).execute()
         if not category_response.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Category not found"
             )
+        
+        category_name = category_response.data[0]["name"]
         
         # Handle main image upload
         image_url_final = image_url
@@ -114,6 +116,7 @@ async def create_product(
             "name": name,
             "price": price,
             "category_id": category_id,
+            "category": category_name,  # Required by database schema
             "description": description,
             "scent": scent,
             "image": image_url_final,
@@ -153,14 +156,16 @@ async def update_product(
 ):
     """Update a product (admin only)."""
     try:
-        # Verify category exists if provided
+        # Verify category exists if provided and get category name
+        category_name = None
         if category_id is not None:
-            category_response = supabase.table("categories").select("id").eq("id", category_id).execute()
+            category_response = supabase.table("categories").select("id, name").eq("id", category_id).execute()
             if not category_response.data:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Category not found"
                 )
+            category_name = category_response.data[0]["name"]
         
         # Handle main image upload
         image_url_final = image_url
@@ -194,6 +199,9 @@ async def update_product(
             product_data["price"] = price
         if category_id is not None:
             product_data["category_id"] = category_id
+            # Update category name when category_id changes
+            if category_name:
+                product_data["category"] = category_name
         if description is not None:
             product_data["description"] = description
         if scent is not None:
